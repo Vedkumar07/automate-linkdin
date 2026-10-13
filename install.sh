@@ -14,7 +14,7 @@ checkout, python = sys.argv[1:]
 def quote(value):
     return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%') + '"'
 service = Path('cadence.service').read_text()
-service = service.replace('WorkingDirectory=%h/cadence', 'WorkingDirectory=' + quote(checkout))
+service = service.replace('WorkingDirectory=%h/cadence', 'WorkingDirectory=' + checkout.replace('%', '%%'))
 service = service.replace('ExecStart=/usr/bin/python3 -m cadence run', 'ExecStart=' + quote(python) + ' -m cadence run')
 (Path.home() / '.config/systemd/user/cadence.service').write_text(service)
 PY
