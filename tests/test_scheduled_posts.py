@@ -48,6 +48,16 @@ class ScheduledPostsTests(unittest.TestCase):
         self.assertEqual(self.app.db.get_post(self.pid)['status'], 'posted')
         self.assertTrue(self.app.db.get_post(self.pid)['posted_at'])
 
+    def test_scheduled_image_is_previewed_and_sent_to_publisher(self):
+        photo = self.app.st.data_dir / 'media' / 'attachment.png'
+        photo.write_bytes(b'test image')
+        self.app.db.update_post(self.pid, photo_path=str(photo), source={'photo_alt': 'My project'})
+        self.schedule()
+        body = web.Dashboard(self.app).today('').decode()
+        self.assertIn('/media/attachment.png', body)
+        self.app.publish_due(DUE)
+        self.app.li.post.assert_called_once_with('My saved draft', str(photo), 'My project', document='', doc_title='')
+
     def test_cancel_restores_draft_and_prevents_publication(self):
         self.schedule()
         self.assertTrue(self.app.cancel_schedule(self.pid))

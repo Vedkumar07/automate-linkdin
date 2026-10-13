@@ -140,6 +140,8 @@ class Dashboard:
             when = parse_iso(p['scheduled_at']).astimezone(ZoneInfo(st['timezone']))
             out.append(f'''<form class="draft" method="post" action="/decide/{p['id']}">{hidden(self.token)}
 <div class="meta">#{p['id']} &middot; Scheduled for {E(when.strftime('%a %d %b %Y, %H:%M'))} {E(st['timezone'])}</div>
+{('<img class="thumb" alt="Scheduled post attachment" src="/media/' + E(Path(p['photo_path']).name) + '">') if p['photo_path'] else ''}
+{('<p class="help"><a href="/media/' + E(Path(p['source']['doc_path']).name) + '" target="_blank">Open the carousel PDF</a></p>') if p['source'].get('doc_path') else ''}
 <pre class="out">{E(p['text'])}</pre>
 <div class="row"><label>New publishing time <input type="datetime-local" name="scheduled_at" value="{when.strftime('%Y-%m-%dT%H:%M')}"></label>
 <button name="do" value="schedule">Reschedule</button><button name="do" value="cancel">Cancel schedule / edit draft</button></div></form>''')
