@@ -7,6 +7,8 @@ import secrets
 import threading
 import urllib.parse
 from pathlib import Path
+from zoneinfo import ZoneInfo
+from .util import parse_iso
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import plan, quality, studio
@@ -86,7 +88,7 @@ class Dashboard:
         ok, note, _ = a.llm_health()
         busy = a.gen_lock.locked() or any(p["status"] == "publishing" for p in a.db.list_posts(5))
         chips = [
-            ("Next post", "ok" if nxt and not paused else "bad",
+            ("Next automatic draft", "ok" if nxt and not paused else "bad",
              "Paused" if paused else (nxt.strftime("%a %d %b") if nxt else "Not scheduled"),
              "" if paused or not nxt else nxt.strftime("%H:%M") + f" {st['timezone'].split('/')[-1]}"),
             ("LinkedIn", "ok" if li["connected"] else "bad", "Connected" if li["connected"] else "Not connected", li["note"]),
@@ -123,7 +125,24 @@ class Dashboard:
 {('<img class="thumb" alt="" src="/media/' + E(Path(p["photo_path"]).name) + '">') if p["photo_path"] else ""}<textarea name="text" rows="11">{E(p["text"])}</textarea>{flags}{err}
 <div class="row"><button class="primary" name="do" value="post">Post it</button>
 <button name="do" value="save">Save edit</button><button name="do" value="regen">Different take</button>
-<span class="spacer"></span><button name="do" value="skip">Skip</button></div></form>''')
+<span class="spacer"></span><button name="do" value="skip">Skip</button></div>
+<div class="row"><label>Publish at ({E(st['timezone'])}) <input type="datetime-local" name="scheduled_at"></label>
+<button name="do" value="schedule">Schedule post</button></div>
+<p class="help">Scheduling approves this draft for automatic publication. Keep Cadence running.</p></form>''')
+
+        out.append('<h2>Scheduled posts</h2>')
+        scheduled = a.db.scheduled()
+        if not scheduled:
+            out.append('<div class="empty">No posts scheduled for publication.</div>')
+        if paused and scheduled:
+            out.append('<div class="note">Publishing is paused. Resume to publish due posts.</div>')
+        for p in scheduled:
+            when = parse_iso(p['scheduled_at']).astimezone(ZoneInfo(st['timezone']))
+            out.append(f'''<form class="draft" method="post" action="/decide/{p['id']}">{hidden(self.token)}
+<div class="meta">#{p['id']} &middot; Scheduled for {E(when.strftime('%a %d %b %Y, %H:%M'))} {E(st['timezone'])}</div>
+<pre class="out">{E(p['text'])}</pre>
+<div class="row"><label>New publishing time <input type="datetime-local" name="scheduled_at" value="{when.strftime('%Y-%m-%dT%H:%M')}"></label>
+<button name="do" value="schedule">Reschedule</button><button name="do" value="cancel">Cancel schedule / edit draft</button></div></form>''')
 
         modes = "".join(f'<option value="{m}">{l}</option>' for m, l in
                         (("", "Let Cadence choose"), ("news", "News take"), ("profile", "From my background"),
@@ -187,6 +206,18 @@ and writes about the lived experience behind it. Small and slightly embarrassing
             post = a.db.get_post(pid)
             if not post:
                 return "That draft no longer exists."
+            if do == "cancel":
+                return "Schedule cancelled. The draft is waiting for approval." if a.cancel_schedule(pid) else "This post is no longer scheduled."
+            if do == "schedule":
+                # Validate and edit together before the worker can claim the draft.
+                with a.db.lock:
+                    label = a.schedule_post(pid, field("scheduled_at"))
+                    if text and text != post["text"]:
+                        if post["status"] not in ("pending", "failed"):
+                            return f"Scheduled for {label}."
+                        flags = quality.check(quality.clean(text), a.settings().cfg, quality.banned_patterns(a.settings()["banned"]))
+                        a.db.update_post(pid, text=quality.clean(text), flags=flags)
+                return f"Scheduled for {label}. Cadence must be running."
             if text and text != post["text"] and post["status"] == "pending":
                 a.edit(pid, text)
                 post = a.db.get_post(pid)

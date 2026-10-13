@@ -52,6 +52,8 @@ class DB:
                 self.conn.execute(f"ALTER TABLE inbox ADD COLUMN {col}")
             except sqlite3.OperationalError:
                 pass
+        if "scheduled_at" not in {r[1] for r in self.conn.execute("PRAGMA table_info(posts)")}:
+            self.conn.execute("ALTER TABLE posts ADD COLUMN scheduled_at TEXT DEFAULT ''")
         self.lock = threading.RLock()
 
     def _q(self, sql, args=()):
@@ -107,6 +109,24 @@ class DB:
     def pending(self):
         rows = self._q("SELECT * FROM posts WHERE status='pending' ORDER BY id").fetchall()
         return [self._post(r) for r in rows]
+
+    def scheduled(self):
+        rows = self._q("SELECT * FROM posts WHERE status='scheduled' ORDER BY scheduled_at,id").fetchall()
+        return [self._post(r) for r in rows]
+
+    def set_schedule(self, pid: int, when: str) -> bool:
+        return self._q("UPDATE posts SET status='scheduled', scheduled_at=?, error='', updated_at=? "
+                       "WHERE id=? AND status IN ('pending','failed','scheduled')",
+                       (when, iso(), pid)).rowcount == 1
+
+    def cancel_schedule(self, pid: int) -> bool:
+        return self._q("UPDATE posts SET status='pending', scheduled_at='', updated_at=? "
+                       "WHERE id=? AND status='scheduled'", (iso(), pid)).rowcount == 1
+
+    def claim_due(self, pid: int, now: str) -> bool:
+        return self._q("UPDATE posts SET status='publishing', updated_at=? "
+                       "WHERE id=? AND status='scheduled' AND scheduled_at<=?",
+                       (iso(), pid, now)).rowcount == 1
 
     def posted_between(self, start_iso: str, end_iso: str) -> int:
         row = self._q("SELECT COUNT(*) c FROM posts WHERE status='posted' AND posted_at>=? AND posted_at<?",

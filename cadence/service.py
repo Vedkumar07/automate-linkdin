@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import json
 import uuid
@@ -14,7 +15,7 @@ from .db import DB
 from .linkedin import LinkedIn, LinkedInError
 from .llm import LLMError, Ollama
 from .telegram import Telegram
-from .util import iso, log, utcnow
+from .util import iso, log, parse_iso, utcnow
 
 
 class App:
@@ -145,8 +146,49 @@ class App:
         mid = self.tg.send_draft(self.db.get_post(pid))
         self.db.update_post(pid, tg_message_id=mid)
 
-    def approve(self, pid: int):
-        if not (self.db.claim(pid, "pending", "publishing") or self.db.claim(pid, "failed", "publishing")):
+    def schedule_post(self, pid: int, local_time: str) -> str:
+        st = self.settings()
+        zone = ZoneInfo(st["timezone"])
+        try:
+            naive = datetime.fromisoformat(local_time)
+            if naive.tzinfo is not None:
+                raise ValueError("Use a local date and time without a timezone offset.")
+            when = naive.replace(tzinfo=zone)
+            # Reject nonexistent and ambiguous local times rather than choose silently.
+            if when.astimezone(utcnow().tzinfo).astimezone(zone).replace(tzinfo=None) != naive:
+                raise ValueError("This time does not exist due to a clock change.")
+            if when.utcoffset() != naive.replace(tzinfo=zone, fold=1).utcoffset():
+                raise ValueError("This time is ambiguous due to a clock change. Choose another time.")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid publishing time: {e}") from e
+        if when <= utcnow():
+            raise ValueError("Choose a publishing time in the future.")
+        if not self.li.status()["connected"]:
+            raise ValueError("Connect LinkedIn before scheduling a post.")
+        if not self.db.set_schedule(pid, iso(when.astimezone(utcnow().tzinfo))):
+            raise ValueError("This draft is no longer available to schedule.")
+        post = self.db.get_post(pid)
+        self.tg.clear_buttons(post["tg_message_id"])
+        label = when.strftime("%a %d %b %Y, %H:%M") + " " + st["timezone"]
+        self.tg.notify(f"Draft #{pid} scheduled for {label}. Cadence must be running to publish it.")
+        return label
+
+    def cancel_schedule(self, pid: int) -> bool:
+        if not self.db.cancel_schedule(pid):
+            return False
+        mid = self.tg.send_draft(self.db.get_post(pid))
+        self.db.update_post(pid, tg_message_id=mid)
+        return True
+
+    def publish_due(self, now: datetime):
+        for post in self.db.scheduled():
+            if post["scheduled_at"] <= iso(now.astimezone(utcnow().tzinfo)):
+                self.approve(post["id"], scheduled=True, now=now)
+
+    def approve(self, pid: int, scheduled: bool = False, now: datetime | None = None):
+        claimed = (self.db.claim_due(pid, iso((now or utcnow()).astimezone(utcnow().tzinfo))) if scheduled
+                   else (self.db.claim(pid, "pending", "publishing") or self.db.claim(pid, "failed", "publishing")))
+        if not claimed:
             return False
         post = self.db.get_post(pid)
         try:
@@ -251,6 +293,9 @@ class App:
         return "\n".join([
             f"Schedule: {'PAUSED' if paused else ('next ' + nxt.strftime('%a %d %b, %H:%M') if nxt else 'no days set')}",
             f"Waiting for your decision: {len(self.db.pending())}",
+            "Scheduled publishing: " + ("; ".join(
+                f"#{p['id']} at " + parse_iso(p['scheduled_at']).astimezone(ZoneInfo(self.settings()['timezone'])).strftime('%d %b %Y %H:%M')
+                for p in self.db.scheduled()) + " " + self.settings()['timezone'] if self.db.scheduled() else "none"),
             f"In your inbox: {len(self.db.inbox_waiting())}",
             f"Last post: {last[0]['posted_at'][:10] + ' (' + last[0]['mode'] + ')' if last else 'none yet'}",
             f"LinkedIn: {li['note']}",

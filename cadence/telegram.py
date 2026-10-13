@@ -17,6 +17,8 @@ HELP = (
     "Your messages get priority over news.\n\n"
     "/draft  write a post now\n"
     "/status  what is queued and when the next post is\n"
+    "/schedule ID YYYY-MM-DD HH:MM  approve a draft for timed publishing\n"
+    "/unschedule ID  return a scheduled post to drafts\n"
     "/inbox  what is waiting\n"
     "/clear  empty the inbox\n"
     "/pause and /resume  stop or restart the schedule\n"
@@ -160,6 +162,20 @@ class Telegram:
             body = text[6:].strip()
             self.send(self.app.check_text(body) if body else "Send /check followed by the draft text.")
             return
+        command = text.split()[0].lower().split("@")[0] if text else ""
+        if command in ("/schedule", "/unschedule"):
+            parts = text.split()
+            try:
+                if command == "/schedule" and len(parts) == 4:
+                    label = self.app.schedule_post(int(parts[1]), parts[2] + "T" + parts[3])
+                    self.send(f"Publishing time: {label}")
+                elif command == "/unschedule" and len(parts) == 2:
+                    self.send("Schedule cancelled." if self.app.cancel_schedule(int(parts[1])) else "This post is no longer scheduled.")
+                else:
+                    self.send("Use /schedule ID YYYY-MM-DD HH:MM (your configured timezone) or /unschedule ID.")
+            except ValueError as e:
+                self.send(str(e))
+            return
         if text.startswith("/"):
             return self._command(text.split()[0].lower().split("@")[0])
         reply_to = (m.get("reply_to_message") or {}).get("message_id")
@@ -204,7 +220,7 @@ class Telegram:
             self.send(f"Cleared {self.db.inbox_clear()} waiting item(s).")
         elif cmd == "/pause":
             self.db.kv_set("paused", True)
-            self.send("Schedule paused. Nothing will be written until /resume.")
+            self.send("Schedule paused. Draft generation and scheduled publishing are stopped until /resume.")
         elif cmd == "/resume":
             self.db.kv_set("paused", False)
             self.send("Schedule running again.")

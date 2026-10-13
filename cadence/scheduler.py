@@ -61,6 +61,7 @@ def tick(app):
     app.remind_token_expiry(now)
     if app.db.kv_get("paused", False):
         return
+    app.publish_due(now)
     slot = due_slot(now, cfg, app.db.kv_get("last_slot"))
     if not slot:
         return

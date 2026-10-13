@@ -108,6 +108,14 @@ The application uses the Python standard library except for optional carousel PD
 
 Never commit `.env`, `data/`, `config.json`, `voice.md`, `profile.md`, or `stories.md`. The repository includes generic templates instead.
 
+## Schedule a saved draft
+
+On **Today**, choose **Publish at** under your draft (in the timezone from `config.json`), then click **Schedule post**. This approves the saved text for automatic publication. LinkedIn must be connected. **Scheduled posts** shows the exact local publishing time and lets you reschedule or cancel. Cancel returns the post to drafts for editing and approval.
+
+Telegram supports `/schedule 7 2026-10-16 09:00` (replace the draft id and future date/time), `/unschedule 7`, and `/status` to inspect the queue.
+
+Cadence checks due posts every 30 seconds. Keep the application and computer running with network access. Scheduled posts persist across restarts; overdue posts publish on the next check after startup or resume. Pause stops both scheduled publishing and automatic draft generation. Failed publication appears in the dashboard for manual retry and is reported on Telegram when configured. Explicitly scheduled posts are independent of the recurring draft schedule and its daily automatic-post limit.
+
 ## Make it sound like you
 
 Use the **Voice** page to paste three to six things you really wrote. Use **Background** for real, specific, slightly embarrassing things from your work. The model copies examples far better than it follows rules.
