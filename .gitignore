@@ -1,0 +1,19 @@
+# Credentials and personal runtime files
+.env
+.env.*
+!.env.example
+/config.json
+/voice.md
+/profile.md
+/stories.md
+/data/
+# Local environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.zip
+.pytest_cache/
+build/
+dist/
+*.egg-info/

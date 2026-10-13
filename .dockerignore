@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!requirements.txt
+!cadence/
+!cadence/**
+cadence/**/__pycache__/
+cadence/**/*.pyc

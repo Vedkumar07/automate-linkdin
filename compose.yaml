@@ -1,0 +1,66 @@
+services:
+  cadence:
+    build: .
+    user: "${CADENCE_UID:-1000}:${CADENCE_GID:-1000}"
+    restart: unless-stopped
+    init: true
+    environment:
+      CADENCE_HOME: /workspace
+      CADENCE_WEB_HOST: 0.0.0.0
+      CADENCE_WEB_PORT: "8787"
+      OLLAMA_URL: http://ollama:11434
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /workspace/.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config.json
+        target: /workspace/config.json
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./voice.md
+        target: /workspace/voice.md
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./profile.md
+        target: /workspace/profile.md
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./stories.md
+        target: /workspace/stories.md
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data
+        target: /workspace/data
+        bind:
+          create_host_path: false
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8787/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+volumes:
+  ollama-models:

@@ -1,0 +1,14 @@
+[Unit]
+Description=Cadence LinkedIn assistant
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cadence
+ExecStart=/usr/bin/python3 -m cadence run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
